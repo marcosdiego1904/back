@@ -4,7 +4,15 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+// Configura CORS para permitir tu frontend en Vercel
+app.use(cors({
+  origin: 'https://lamp2-i0kpjhigd-marcosdiego1904s-projects.vercel.app', // URL de tu frontend
+  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Métodos permitidos
+  allowedHeaders: ['Content-Type', 'Authorization'], // Headers permitidos
+  credentials: true, // Si usas cookies o autenticación
+}));
+
 app.use(express.json());
 
 // 📂 Ruta de prueba para verificar que el servidor funciona
