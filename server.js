@@ -13,7 +13,7 @@ app.get('/', (req, res) => {
 });
 
 // 📂 Obtener todas las categorías
-app.get('/api/categories', async (req, res) => {  // 🔹 AGREGAMOS "/api" PARA QUE SEA CONSISTENTE
+app.get('/api/categories', async (req, res) => {
   try {
     const [rows] = await pool.query("SELECT * FROM categories");
     res.json(rows);
@@ -24,7 +24,7 @@ app.get('/api/categories', async (req, res) => {  // 🔹 AGREGAMOS "/api" PARA 
 });
 
 // 📂 Obtener subcategorías por ID de categoría
-app.get('/api/subcategories/:category_id', async (req, res) => { // 🔹 AGREGAMOS "/api"
+app.get('/api/subcategories/:category_id', async (req, res) => {
   try {
     const { category_id } = req.params;
     const [rows] = await pool.query("SELECT * FROM subcategories WHERE category_id = ?", [category_id]);
@@ -36,7 +36,7 @@ app.get('/api/subcategories/:category_id', async (req, res) => { // 🔹 AGREGAM
 });
 
 // 📂 Obtener versículos por ID de subcategoría
-app.get('/api/verses/:subcategory_id', async (req, res) => { // 🔹 AGREGAMOS "/api"
+app.get('/api/verses/:subcategory_id', async (req, res) => {
   try {
     const { subcategory_id } = req.params;
     const [rows] = await pool.query("SELECT * FROM verses WHERE subcategory_id = ?", [subcategory_id]);
@@ -48,7 +48,7 @@ app.get('/api/verses/:subcategory_id', async (req, res) => { // 🔹 AGREGAMOS "
 });
 
 // 📂 Obtener un versículo aleatorio
-app.get('/api/verse/random', async (req, res) => { // 🔹 AGREGAMOS "/api"
+app.get('/api/verse/random', async (req, res) => {
   try {
     const [rows] = await pool.query("SELECT * FROM verses ORDER BY RAND() LIMIT 1");
     res.json(rows[0]);
@@ -58,5 +58,8 @@ app.get('/api/verse/random', async (req, res) => { // 🔹 AGREGAMOS "/api"
   }
 });
 
-// 🔹 🔥 NO EJECUTAMOS `app.listen()` en Vercel
-module.exports = app;
+// 🔹 🔥 Aseguramos que el servidor escuche en el puerto correcto (Render lo necesita)
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ Server is running on port ${PORT}`);
+});
