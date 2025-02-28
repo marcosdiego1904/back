@@ -9,7 +9,6 @@ const app = express();
 app.use(express.json()); // Parse JSON bodies
 
 // List of origins allowed to access the API
-// List of origins allowed to access the API
 const allowedOrigins = [
   'https://lamp2-glredjqk8-marcosdiego1904s-projects.vercel.app',
   'https://lamp2-i0kpjhigd-marcosdiego1904s-projects.vercel.app',
@@ -18,21 +17,12 @@ const allowedOrigins = [
   'http://localhost:5173' // Common Vite port
 ];
 
-// Configure CORS
+// Simpler CORS configuration
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, Postman)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('Blocked by CORS:', origin);
-      callback(null, true); // Temporarily allow all origins for debugging
-    }
-  },
+  origin: allowedOrigins,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Health check endpoint
