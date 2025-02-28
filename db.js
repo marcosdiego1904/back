@@ -1,26 +1,39 @@
 const mysql = require('mysql2');
 const { URL } = require('url');
 
-// Obtén la URL de la base de datos desde las variables de entorno
+// Get the database URL from environment variables
 const dbUrl = process.env.DATABASE_URL;
 
 if (!dbUrl) {
-  throw new Error('La variable de entorno DATABASE_URL no está definida.');
+  throw new Error('DATABASE_URL environment variable is not defined.');
 }
 
-// Parsea la URL de la base de datos
-const { hostname, port, username, password, pathname } = new URL(dbUrl);
+// Parse the database URL
+const parsedUrl = new URL(dbUrl);
 
-// Configura el pool de conexiones
+// Configure the pool with SSL settings that accept self-signed certificates
 const pool = mysql.createPool({
-  host: hostname,
-  port: port,
-  user: username,
-  password: password,
-  database: pathname.replace('/', ''), // Elimina el '/' del nombre de la base de datos
+  host: parsedUrl.hostname,
+  port: parsedUrl.port,
+  user: parsedUrl.username,
+  password: parsedUrl.password,
+  database: parsedUrl.pathname.replace('/', ''),
   ssl: {
-    rejectUnauthorized: true, // Configura SSL si es necesario
+    // This allows self-signed certificates
+    rejectUnauthorized: false
   },
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 });
 
-module.exports = pool.promise(); // Exporta el pool para usarlo en otros archivos
+// Test the connection
+pool.promise().query('SELECT 1')
+  .then(() => {
+    console.log('Database connection successful');
+  })
+  .catch(err => {
+    console.error('Database connection error:', err);
+  });
+
+module.exports = pool.promise();
