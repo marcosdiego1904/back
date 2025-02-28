@@ -9,13 +9,13 @@ const app = express();
 app.use(express.json()); // Parse JSON bodies
 
 // List of origins allowed to access the API
+// List of origins allowed to access the API
 const allowedOrigins = [
   'https://lamp2-glredjqk8-marcosdiego1904s-projects.vercel.app',
   'https://lamp2-i0kpjhigd-marcosdiego1904s-projects.vercel.app',
-  'https://lamp-to-my-feet-4.onrender.com', // Your Vercel frontend domain
+  'https://front-self-eight.vercel.app', // Your new Vercel deployment URL
   'http://localhost:3000',
-  'http://localhost:5173', // Common Vite port
-  'https://front-4vx5.vercel.app' // Add your actual Vercel domain here
+  'http://localhost:5173' // Common Vite port
 ];
 
 // Configure CORS
