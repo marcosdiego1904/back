@@ -1,73 +1,37 @@
 const express = require('express');
-const pool = require('./db'); // Importamos la conexión a MySQL
 const cors = require('cors');
-require('dotenv').config();
-
 const app = express();
 
-// Configura CORS para permitir tu frontend en Vercel
-app.use(cors({
-  origin: 'https://lamp2-i0kpjhigd-marcosdiego1904s-projects.vercel.app', // URL de tu frontend
-  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Métodos permitidos
-  allowedHeaders: ['Content-Type', 'Authorization'], // Headers permitidos
-  credentials: true, // Si usas cookies o autenticación
-}));
+// List of origins allowed to access the API.
+const allowedOrigins = [
+  'https://lamp2-glredjqk8-marcosdiego1904s-projects.vercel.app',
+  'https://lamp2-i0kpjhigd-marcosdiego1904s-projects.vercel.app'
+];
 
-app.use(express.json());
-
-// 📂 Ruta de prueba para verificar que el servidor funciona
-app.get('/', (req, res) => {
-  res.send('✅ API is running...');
-});
-
-// 📂 Obtener todas las categorías
-app.get('/api/categories', async (req, res) => {
-  try {
-    const [rows] = await pool.query("SELECT * FROM categories");
-    res.json(rows);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Server Error");
+// Configure CORS options.
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
   }
+};
+
+// Apply the CORS middleware.
+app.use(cors(corsOptions));
+
+// Example endpoint.
+app.get('/api/categories', (req, res) => {
+  // Replace this with your actual categories data.
+  res.json({ categories: [] });
 });
 
-// 📂 Obtener subcategorías por ID de categoría
-app.get('/api/subcategories/:category_id', async (req, res) => {
-  try {
-    const { category_id } = req.params;
-    const [rows] = await pool.query("SELECT * FROM subcategories WHERE category_id = ?", [category_id]);
-    res.json(rows);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-// 📂 Obtener versículos por ID de subcategoría
-app.get('/api/verses/:subcategory_id', async (req, res) => {
-  try {
-    const { subcategory_id } = req.params;
-    const [rows] = await pool.query("SELECT * FROM verses WHERE subcategory_id = ?", [subcategory_id]);
-    res.json(rows);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-// 📂 Obtener un versículo aleatorio
-app.get('/api/verse/random', async (req, res) => {
-  try {
-    const [rows] = await pool.query("SELECT * FROM verses ORDER BY RAND() LIMIT 1");
-    res.json(rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-// 🔹 🔥 Aseguramos que el servidor escuche en el puerto correcto (Render lo necesita)
+// Start the server.
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Server is running on port ${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
 });
