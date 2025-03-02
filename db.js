@@ -1,23 +1,23 @@
 const mysql = require('mysql2');
-const { URL } = require('url');
 
-// Get the database URL from environment variables
-const dbUrl = process.env.DATABASE_URL;
+// Get database config from environment variables
+const dbHost = process.env.DB_HOST || 'localhost';
+const dbUser = process.env.DB_USER;
+const dbPassword = process.env.DB_PASSWORD;
+const dbName = process.env.DB_NAME;
+const dbPort = process.env.DB_PORT || 3306;
 
-if (!dbUrl) {
-  throw new Error('DATABASE_URL environment variable is not defined.');
+if (!dbUser || !dbPassword || !dbName) {
+  throw new Error('Database environment variables are not properly defined.');
 }
 
-// Parse the database URL
-const parsedUrl = new URL(dbUrl);
-
-// Configure the pool with SSL settings that accept self-signed certificates
+// Configure the pool
 const pool = mysql.createPool({
-  host: parsedUrl.hostname,
-  port: parsedUrl.port,
-  user: parsedUrl.username,
-  password: parsedUrl.password,
-  database: parsedUrl.pathname.replace('/', ''),
+  host: dbHost,
+  port: dbPort,
+  user: dbUser,
+  password: dbPassword,
+  database: dbName,
   ssl: {
     // This allows self-signed certificates
     rejectUnauthorized: false
