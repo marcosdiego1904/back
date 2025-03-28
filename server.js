@@ -205,3 +205,81 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+app.post('/api/user/memorized-verses', authenticate, async (req, res) => {
+  try {
+    const { verseId, verseReference, verseText, contextText } = req.body;
+    
+    if (!verseId || !verseReference || !verseText) {
+      return res.status(400).json({ message: 'Verse ID, reference, and text are required' });
+    }
+    
+    // Check if this verse is already saved by the user
+    const [existingVerses] = await db.query(
+      'SELECT * FROM user_memorized_verses WHERE user_id = ? AND verse_id = ?',
+      [req.user.userId, verseId]
+    );
+    
+    if (existingVerses.length > 0) {
+      // Update the existing record to update the timestamp
+      await db.query(
+        'UPDATE user_memorized_verses SET memorized_date = NOW() WHERE user_id = ? AND verse_id = ?',
+        [req.user.userId, verseId]
+      );
+      
+      return res.json({ 
+        message: 'Verse memorization updated successfully',
+        isNew: false
+      });
+    }
+    
+    // Insert the new memorized verse
+    await db.query(
+      'INSERT INTO user_memorized_verses (user_id, verse_id, verse_reference, verse_text, context_text, memorized_date) VALUES (?, ?, ?, ?, ?, NOW())',
+      [req.user.userId, verseId, verseReference, verseText, contextText || '']
+    );
+    
+    res.status(201).json({ 
+      message: 'Verse added to your memorized collection',
+      isNew: true
+    });
+  } catch (error) {
+    console.error('Save memorized verse error:', error);
+    res.status(500).json({ message: 'Server error while saving memorized verse' });
+  }
+});
+
+// Get user's memorized verses
+app.get('/api/user/memorized-verses', authenticate, async (req, res) => {
+  try {
+    const [verses] = await db.query(
+      'SELECT * FROM user_memorized_verses WHERE user_id = ? ORDER BY memorized_date DESC',
+      [req.user.userId]
+    );
+    
+    res.json(verses);
+  } catch (error) {
+    console.error('Fetch memorized verses error:', error);
+    res.status(500).json({ message: 'Server error while fetching memorized verses' });
+  }
+});
+// Add this to your server.js file
+
+// Get verse by ID endpoint
+app.get('/api/verse/:verseId', async (req, res) => {
+  try {
+    const verseId = req.params.verseId;
+    const [rows] = await db.query('SELECT * FROM verses WHERE id = ?', [verseId]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Verse not found' });
+    }
+    
+    res.json(rows[0]);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ 
+      error: 'Database error', 
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' 
+    });
+  }
+});
