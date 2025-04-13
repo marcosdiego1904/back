@@ -14,9 +14,11 @@ app.use(express.json()); // Parse JSON bodies
 const allowedOrigins = [
   'https://lamp2-glredjqk8-marcosdiego1904s-projects.vercel.app',
   'https://lamp2-i0kpjhigd-marcosdiego1904s-projects.vercel.app',
-  'https://front-self-eight.vercel.app', // Your new Vercel deployment URL
+  'https://front-self-eight.vercel.app', 
+  'https://www.lamptomyfeet.co',
+  'https://lamptomyfeet.co',
   'http://localhost:3000',
-  'http://localhost:5173' // Common Vite port
+  'http://localhost:5173' 
 ];
 
 // Simpler CORS configuration
