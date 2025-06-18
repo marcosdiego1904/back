@@ -159,6 +159,14 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
     }
     
     const user = users[0];
+
+    // Defensive check to prevent bcrypt errors
+    if (!password || !user.password_hash) {
+      console.error('Login error: Missing password from request or password hash from DB.');
+      console.error(`Attempted login for email: ${email}. Password provided: ${!!password}, User has hash: ${!!user.password_hash}`);
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     
