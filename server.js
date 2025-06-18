@@ -29,6 +29,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// Validate JWT_SECRET is present
+if (!process.env.JWT_SECRET) {
+  console.error('❌ JWT_SECRET is required. Please set it in your .env file.');
+  process.exit(1);
+}
+
 // Authentication middleware
 const authenticate = (req, res, next) => {
   // Get token from Authorization header
@@ -39,7 +45,7 @@ const authenticate = (req, res, next) => {
   }
   try {
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
   } catch (error) {
@@ -77,7 +83,7 @@ app.post('/api/auth/register', async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       { userId, username },
-      process.env.JWT_SECRET || 'your-secret-key',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
     res.status(201).json({
@@ -114,7 +120,7 @@ app.post('/api/auth/login', async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, username: user.username },
-      process.env.JWT_SECRET || 'your-secret-key',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
     res.json({

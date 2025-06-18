@@ -3,14 +3,24 @@ const mysql = require('mysql2');
 // Database connection configuration
 let pool;
 
-// Use individual variables for Railway connection
-const dbHost = process.env.DB_HOST || 'crossover.proxy.rlwy.net';
-const dbUser = process.env.DB_USER || 'root';
-const dbPassword = process.env.DB_PASSWORD || 'cLytbcVXOiloQxifsSqXyvrvyeNvIhSV'; // Replace with actual password
-const dbName = process.env.DB_NAME || 'railway';
-const dbPort = process.env.DB_PORT || 14951;
+// Validate that all required environment variables are present
+const requiredEnvVars = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT'];
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
-// Configure the pool with individual variables
+if (missingEnvVars.length > 0) {
+  console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('Please check your .env file and ensure all database credentials are set.');
+  process.exit(1);
+}
+
+// Use environment variables (no fallbacks for security)
+const dbHost = process.env.DB_HOST;
+const dbUser = process.env.DB_USER;
+const dbPassword = process.env.DB_PASSWORD;
+const dbName = process.env.DB_NAME;
+const dbPort = process.env.DB_PORT;
+
+// Configure the pool with environment variables
 pool = mysql.createPool({
   host: dbHost,
   port: dbPort,
@@ -29,10 +39,10 @@ pool = mysql.createPool({
 // Test the connection
 pool.promise().query('SELECT 1')
   .then(() => {
-    console.log('Database connection successful');
+    console.log('✅ Database connection successful');
   })
   .catch(err => {
-    console.error('Database connection error:', err);
+    console.error('❌ Database connection error:', err.message);
   });
 
 module.exports = pool.promise();
