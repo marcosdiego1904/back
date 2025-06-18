@@ -30,13 +30,24 @@ const allowedOrigins = [
   'http://localhost:5173' 
 ];
 
-// Simpler CORS configuration
-app.use(cors({
-  origin: allowedOrigins,
+// CORS configuration
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 
 // Validate JWT_SECRET is present
 if (!process.env.JWT_SECRET) {
