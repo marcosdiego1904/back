@@ -210,9 +210,11 @@ app.use((err, req, res, next) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📱 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🔗 Categories: http://localhost:${PORT}/api/categories`);
 });
 app.post('/api/user/memorized-verses', authenticate, async (req, res) => {
   try {

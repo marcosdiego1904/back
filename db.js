@@ -3,45 +3,135 @@ const mysql = require('mysql2');
 // Database connection configuration
 let pool;
 
-// Use environment variables with secure fallbacks for production compatibility
-const dbHost = process.env.DB_HOST || 'crossover.proxy.rlwy.net';
-const dbUser = process.env.DB_USER || 'root';
-const dbPassword = process.env.DB_PASSWORD; // No fallback for security
-const dbName = process.env.DB_NAME || 'railway';
-const dbPort = process.env.DB_PORT || 14951;
+console.log('🔗 Railway MySQL Connection Setup');
 
-// Validate critical credentials
-if (!dbPassword) {
-  console.error('❌ DB_PASSWORD is required for security. Please set it in your environment variables.');
-  console.error('This prevents hardcoded passwords in the codebase.');
-  process.exit(1);
+// Railway provides MYSQL_URL, not DATABASE_URL
+const mysqlUrl = process.env.MYSQL_URL || process.env.DATABASE_URL;
+
+if (mysqlUrl) {
+  console.log('✅ Using MYSQL_URL from Railway');
+  
+  try {
+    // Parse Railway MYSQL_URL: mysql://root:password@host:port/database
+    const url = new URL(mysqlUrl);
+    
+    const config = {
+      host: url.hostname,
+      port: parseInt(url.port) || 3306,
+      user: url.username,
+      password: url.password,
+      database: url.pathname.slice(1), // Remove leading slash
+      ssl: {
+        rejectUnauthorized: false
+      },
+      waitForConnections: true,
+      connectionLimit: 5,
+      queueLimit: 0,
+      charset: 'utf8mb4'
+    };
+    
+    console.log('📋 Railway Connection Config:', {
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      database: config.database,
+      passwordSet: !!config.password
+    });
+    
+    pool = mysql.createPool(config);
+    
+  } catch (error) {
+    console.error('❌ Failed to parse MYSQL_URL:', error.message);
+    process.exit(1);
+  }
+} else {
+  // Fallback to individual Railway environment variables
+  console.log('🔗 Using individual Railway environment variables');
+  
+  const dbHost = process.env.MYSQLHOST || process.env.DB_HOST;
+  const dbUser = process.env.MYSQLUSER || process.env.DB_USER || 'root';
+  const dbPassword = process.env.MYSQLPASSWORD || process.env.DB_PASSWORD;
+  const dbName = process.env.MYSQLDATABASE || process.env.DB_NAME || 'railway';
+  const dbPort = process.env.MYSQLPORT || process.env.DB_PORT || 3306;
+  
+  if (!dbPassword) {
+    console.error('❌ Database password not found');
+    console.error('Expected: MYSQL_URL, MYSQLPASSWORD, or DB_PASSWORD');
+    process.exit(1);
+  }
+  
+  console.log('📋 Individual Config:', {
+    host: dbHost,
+    port: dbPort,
+    user: dbUser,
+    database: dbName,
+    passwordSet: !!dbPassword
+  });
+  
+  pool = mysql.createPool({
+    host: dbHost,
+    port: parseInt(dbPort),
+    user: dbUser,
+    password: dbPassword,
+    database: dbName,
+    ssl: {
+      rejectUnauthorized: false
+    },
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 0,
+    charset: 'utf8mb4'
+  });
 }
 
-// Configure the pool with environment variables
-pool = mysql.createPool({
-  host: dbHost,
-  port: dbPort,
-  user: dbUser,
-  password: dbPassword,
-  database: dbName,
-  ssl: {
-    // This allows self-signed certificates
-    rejectUnauthorized: false
-  },
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  acquireTimeout: 60000,
-  timeout: 60000
-});
+// Enhanced connection test with Railway-specific error handling
+async function testConnection(retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      console.log(`🔄 Testing Railway database connection (attempt ${i + 1}/${retries})...`);
+      const startTime = Date.now();
+      const [result] = await pool.promise().query('SELECT 1 as test');
+      const duration = Date.now() - startTime;
+      console.log(`✅ Railway database connection successful (${duration}ms)`);
+      console.log('📊 Connection result:', result[0]);
+      return true;
+    } catch (err) {
+      console.error(`❌ Railway connection attempt ${i + 1} failed:`, err.message);
+      console.error('Error code:', err.code);
+      
+      if (err.code === 'ETIMEDOUT') {
+        console.log('⚠️  Network timeout - Railway might be experiencing high load');
+      } else if (err.code === 'ER_ACCESS_DENIED_ERROR') {
+        console.log('⚠️  Authentication failed - Check Railway credentials');
+      } else if (err.code === 'ECONNREFUSED') {
+        console.log('⚠️  Connection refused - Railway database might be starting');
+      }
+      
+      if (i < retries - 1) {
+        const delay = Math.min(5000 * (i + 1), 15000);
+        console.log(`⏳ Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  console.error('❌ All Railway connection attempts failed');
+  console.error('🔧 Troubleshooting steps:');
+  console.error('   1. Check Railway service status');
+  console.error('   2. Verify MYSQL_URL or individual credentials');
+  console.error('   3. Check if database is sleeping (common in free tier)');
+  console.error('   4. Try redeploying the Railway service');
+  return false;
+}
 
-// Test the connection
-pool.promise().query('SELECT 1')
-  .then(() => {
-    console.log('✅ Database connection successful');
-  })
-  .catch(err => {
-    console.error('❌ Database connection error:', err.message);
-  });
+// Test connection on startup
+testConnection().then(success => {
+  if (success) {
+    console.log('🎉 Railway database ready for use!');
+  } else {
+    console.error('❌ Railway database connection failed');
+    console.error('📱 Server will continue but database operations may fail');
+  }
+});
 
 module.exports = pool.promise();
