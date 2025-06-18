@@ -3,22 +3,19 @@ const mysql = require('mysql2');
 // Database connection configuration
 let pool;
 
-// Validate that all required environment variables are present
-const requiredEnvVars = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT'];
-const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+// Use environment variables with secure fallbacks for production compatibility
+const dbHost = process.env.DB_HOST || 'crossover.proxy.rlwy.net';
+const dbUser = process.env.DB_USER || 'root';
+const dbPassword = process.env.DB_PASSWORD; // No fallback for security
+const dbName = process.env.DB_NAME || 'railway';
+const dbPort = process.env.DB_PORT || 14951;
 
-if (missingEnvVars.length > 0) {
-  console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
-  console.error('Please check your .env file and ensure all database credentials are set.');
+// Validate critical credentials
+if (!dbPassword) {
+  console.error('❌ DB_PASSWORD is required for security. Please set it in your environment variables.');
+  console.error('This prevents hardcoded passwords in the codebase.');
   process.exit(1);
 }
-
-// Use environment variables (no fallbacks for security)
-const dbHost = process.env.DB_HOST;
-const dbUser = process.env.DB_USER;
-const dbPassword = process.env.DB_PASSWORD;
-const dbName = process.env.DB_NAME;
-const dbPort = process.env.DB_PORT;
 
 // Configure the pool with environment variables
 pool = mysql.createPool({
@@ -33,7 +30,9 @@ pool = mysql.createPool({
   },
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  acquireTimeout: 60000,
+  timeout: 60000
 });
 
 // Test the connection

@@ -31,7 +31,8 @@ app.use(cors({
 
 // Validate JWT_SECRET is present
 if (!process.env.JWT_SECRET) {
-  console.error('❌ JWT_SECRET is required. Please set it in your .env file.');
+  console.error('❌ JWT_SECRET is required for security. Please set it in your environment variables.');
+  console.error('This is critical for token security in production.');
   process.exit(1);
 }
 
