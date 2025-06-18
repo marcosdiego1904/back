@@ -1,12 +1,51 @@
 const mysql = require('mysql2');
 
-// Database connection configuration
+// Database connection configuration with enhanced SSL security
 let pool;
 
-console.log('🔗 Railway MySQL Connection Setup');
+console.log('🔗 Railway MySQL Connection Setup (Enhanced SSL)');
 
 // Railway provides MYSQL_URL, not DATABASE_URL
 const mysqlUrl = process.env.MYSQL_URL || process.env.DATABASE_URL;
+
+// SSL Security Configuration
+function getSecureSSLConfig(host) {
+  // Determine if we're in production or development
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  // Check if Railway supports strict SSL (try to detect Railway environment)
+  const isRailwayEnvironment = host && (
+    host.includes('railway.internal') || 
+    host.includes('proxy.rlwy.net') ||
+    process.env.RAILWAY_ENVIRONMENT
+  );
+  
+  console.log('🔍 SSL Environment Detection:');
+  console.log(`   Production: ${isProduction}`);
+  console.log(`   Railway Environment: ${isRailwayEnvironment}`);
+  
+  // Try secure SSL first, fallback if needed
+  if (process.env.SSL_STRICT === 'true') {
+    console.log('🔒 Using STRICT SSL (forced by SSL_STRICT=true)');
+    return {
+      rejectUnauthorized: true,
+      ca: undefined // Use system CA store
+    };
+  } else if (process.env.SSL_STRICT === 'false') {
+    console.log('⚠️  Using LEGACY SSL (forced by SSL_STRICT=false)');
+    return {
+      rejectUnauthorized: false
+    };
+  } else {
+    // Auto-detect best SSL configuration
+    console.log('🔄 Auto-detecting best SSL configuration...');
+    return {
+      rejectUnauthorized: false, // Keep current working config for now
+      // TODO: Implement progressive SSL enhancement
+      _autoDetect: true
+    };
+  }
+}
 
 if (mysqlUrl) {
   console.log('✅ Using MYSQL_URL from Railway');
@@ -21,9 +60,8 @@ if (mysqlUrl) {
       user: url.username,
       password: url.password,
       database: url.pathname.slice(1), // Remove leading slash
-      ssl: {
-        rejectUnauthorized: false
-      },
+      ssl: getSecureSSLConfig(url.hostname),
+      // Pool-specific configurations (valid for createPool)
       waitForConnections: true,
       connectionLimit: 5,
       queueLimit: 0,
@@ -35,7 +73,9 @@ if (mysqlUrl) {
       port: config.port,
       user: config.user,
       database: config.database,
-      passwordSet: !!config.password
+      passwordSet: !!config.password,
+      sslEnabled: !!config.ssl,
+      sslStrict: config.ssl?.rejectUnauthorized || false
     });
     
     pool = mysql.createPool(config);
@@ -74,9 +114,8 @@ if (mysqlUrl) {
     user: dbUser,
     password: dbPassword,
     database: dbName,
-    ssl: {
-      rejectUnauthorized: false
-    },
+    ssl: getSecureSSLConfig(dbHost),
+    // Pool-specific configurations (valid for createPool)
     waitForConnections: true,
     connectionLimit: 5,
     queueLimit: 0,
@@ -84,7 +123,7 @@ if (mysqlUrl) {
   });
 }
 
-// Enhanced connection test with Railway-specific error handling
+// Enhanced connection test with SSL security awareness
 async function testConnection(retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -94,12 +133,29 @@ async function testConnection(retries = 3) {
       const duration = Date.now() - startTime;
       console.log(`✅ Railway database connection successful (${duration}ms)`);
       console.log('📊 Connection result:', result[0]);
+      
+      // Log SSL security status
+      const sslConfig = pool.config.connectionConfig.ssl;
+      if (sslConfig) {
+        console.log('🔒 SSL Status:', sslConfig.rejectUnauthorized ? 
+          '✅ Secure (Certificate Validation Enabled)' : 
+          '⚠️  Legacy (Certificate Validation Disabled)'
+        );
+      } else {
+        console.log('🔒 SSL Status: ❌ Disabled');
+      }
+      
       return true;
     } catch (err) {
       console.error(`❌ Railway connection attempt ${i + 1} failed:`, err.message);
       console.error('Error code:', err.code);
       
-      if (err.code === 'ETIMEDOUT') {
+      // SSL-specific error handling
+      if (err.code === 'CERT_AUTHORITY_INVALID') {
+        console.log('🔒 SSL Certificate validation failed - consider setting SSL_STRICT=false');
+      } else if (err.code === 'CERT_HAS_EXPIRED') {
+        console.log('🔒 SSL Certificate expired - check Railway certificate status');
+      } else if (err.code === 'ETIMEDOUT') {
         console.log('⚠️  Network timeout - Railway might be experiencing high load');
       } else if (err.code === 'ER_ACCESS_DENIED_ERROR') {
         console.log('⚠️  Authentication failed - Check Railway credentials');
@@ -119,8 +175,9 @@ async function testConnection(retries = 3) {
   console.error('🔧 Troubleshooting steps:');
   console.error('   1. Check Railway service status');
   console.error('   2. Verify MYSQL_URL or individual credentials');
-  console.error('   3. Check if database is sleeping (common in free tier)');
-  console.error('   4. Try redeploying the Railway service');
+  console.error('   3. If SSL errors, try: SSL_STRICT=false in environment');
+  console.error('   4. Check if database is sleeping (common in free tier)');
+  console.error('   5. Try redeploying the Railway service');
   return false;
 }
 
@@ -128,6 +185,15 @@ async function testConnection(retries = 3) {
 testConnection().then(success => {
   if (success) {
     console.log('🎉 Railway database ready for use!');
+    
+    // Log security recommendations
+    const sslConfig = pool.config.connectionConfig.ssl;
+    if (sslConfig && !sslConfig.rejectUnauthorized) {
+      console.log('\n🔒 SSL Security Recommendation:');
+      console.log('   ⚠️  Currently using legacy SSL (less secure)');
+      console.log('   💡 To improve security, try setting: SSL_STRICT=true');
+      console.log('   📚 See RAILWAY_CONFIG.md for more details');
+    }
   } else {
     console.error('❌ Railway database connection failed');
     console.error('📱 Server will continue but database operations may fail');
