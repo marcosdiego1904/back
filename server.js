@@ -4,6 +4,15 @@ require('dotenv').config();
 const db = require('./db'); // Import the database connection
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { 
+  validateEmail, 
+  validateUsername, 
+  validatePassword,
+  validateId,
+  validateVerseText,
+  validateVerseReference,
+  createValidationMiddleware
+} = require('./src/utils/validation');
 
 const app = express();
 
@@ -54,15 +63,43 @@ const authenticate = (req, res, next) => {
   }
 };
 
+// Validation middleware definitions
+const validateRegistration = createValidationMiddleware({
+  username: validateUsername,
+  email: validateEmail,
+  password: validatePassword
+});
+
+const validateLogin = createValidationMiddleware({
+  email: validateEmail,
+  password: (password) => ({ isValid: !!password, errors: password ? [] : ['Password is required'] })
+});
+
+const validateCategoryId = createValidationMiddleware({
+  categoryId: (id) => validateId(id, 'Category ID')
+});
+
+const validateSubcategoryId = createValidationMiddleware({
+  subcategoryId: (id) => validateId(id, 'Subcategory ID')
+});
+
+const validateVerseId = createValidationMiddleware({
+  verseId: (id) => validateId(id, 'Verse ID')
+});
+
+const validateMemorizedVerse = createValidationMiddleware({
+  verseId: (id) => validateId(id, 'Verse ID'),
+  verseReference: validateVerseReference,
+  verseText: (text) => validateVerseText(text, 'Verse text', 2000),
+  contextText: (text) => text ? validateVerseText(text, 'Context text', 1000) : { isValid: true, sanitized: '' }
+});
+
 // Auth routes
 // Register a new user
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', validateRegistration, async (req, res) => {
   try {
-    const { username, email, password } = req.body;
-    // Validate input
-    if (!username || !email || !password) {
-      return res.status(400).json({ message: 'Username, email, and password are required' });
-    }
+    // Use sanitized data from validation middleware
+    const { username, email, password } = req.sanitized;
     // Check if user already exists
     const [existingUsers] = await db.query(
       'SELECT * FROM users WHERE username = ? OR email = ?',
@@ -99,9 +136,10 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Login
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', validateLogin, async (req, res) => {
   try {
-    const { email, password } = req.body;
+    // Use sanitized data from validation middleware
+    const { email, password } = req.sanitized;
     // Find user by email
     const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
     
@@ -155,9 +193,10 @@ app.get('/api/categories', async (req, res) => {
 });
 
 // Subcategories endpoint
-app.get('/api/subcategories/:categoryId', async (req, res) => {
+app.get('/api/subcategories/:categoryId', validateCategoryId, async (req, res) => {
   try {
-    const categoryId = req.params.categoryId;
+    // Use validated and parsed ID from middleware
+    const categoryId = req.sanitized.categoryId;
     const [rows] = await db.query('SELECT * FROM subcategories WHERE category_id = ?', [categoryId]);
     res.json(rows);
   } catch (error) {
@@ -170,9 +209,10 @@ app.get('/api/subcategories/:categoryId', async (req, res) => {
 });
 
 // Verses endpoint
-app.get('/api/verses/:subcategoryId', async (req, res) => {
+app.get('/api/verses/:subcategoryId', validateSubcategoryId, async (req, res) => {
   try {
-    const subcategoryId = req.params.subcategoryId;
+    // Use validated and parsed ID from middleware
+    const subcategoryId = req.sanitized.subcategoryId;
     const [rows] = await db.query('SELECT * FROM verses WHERE subcategory_id = ?', [subcategoryId]);
     res.json(rows);
   } catch (error) {
@@ -216,13 +256,10 @@ app.listen(PORT, () => {
   console.log(`📱 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🔗 Categories: http://localhost:${PORT}/api/categories`);
 });
-app.post('/api/user/memorized-verses', authenticate, async (req, res) => {
+app.post('/api/user/memorized-verses', authenticate, validateMemorizedVerse, async (req, res) => {
   try {
-    const { verseId, verseReference, verseText, contextText } = req.body;
-    
-    if (!verseId || !verseReference || !verseText) {
-      return res.status(400).json({ message: 'Verse ID, reference, and text are required' });
-    }
+    // Use sanitized data from validation middleware
+    const { verseId, verseReference, verseText, contextText } = req.sanitized;
     
     // Check if this verse is already saved by the user
     const [existingVerses] = await db.query(
@@ -276,9 +313,10 @@ app.get('/api/user/memorized-verses', authenticate, async (req, res) => {
 // Add this to your server.js file
 
 // Get verse by ID endpoint
-app.get('/api/verse/:verseId', async (req, res) => {
+app.get('/api/verse/:verseId', validateVerseId, async (req, res) => {
   try {
-    const verseId = req.params.verseId;
+    // Use validated and parsed ID from middleware
+    const verseId = req.sanitized.verseId;
     const [rows] = await db.query('SELECT * FROM verses WHERE id = ?', [verseId]);
     
     if (rows.length === 0) {
