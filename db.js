@@ -9,42 +9,15 @@ console.log('🔗 Railway MySQL Connection Setup (Enhanced SSL)');
 const mysqlUrl = process.env.MYSQL_URL || process.env.DATABASE_URL;
 
 // SSL Security Configuration
-function getSecureSSLConfig(host) {
-  // Determine if we're in production or development
+function getSecureSSLConfig() {
   const isProduction = process.env.NODE_ENV === 'production';
+  console.log(`🔒 Production mode for DB (using NODE_ENV): ${isProduction}`);
   
-  // Check if Railway supports strict SSL (try to detect Railway environment)
-  const isRailwayEnvironment = host && (
-    host.includes('railway.internal') || 
-    host.includes('proxy.rlwy.net') ||
-    process.env.RAILWAY_ENVIRONMENT
-  );
-  
-  console.log('🔍 SSL Environment Detection:');
-  console.log(`   Production: ${isProduction}`);
-  console.log(`   Railway Environment: ${isRailwayEnvironment}`);
-  
-  // Try secure SSL first, fallback if needed
-  if (process.env.SSL_STRICT === 'true') {
-    console.log('🔒 Using STRICT SSL (forced by SSL_STRICT=true)');
-    return {
-      rejectUnauthorized: true,
-      ca: undefined // Use system CA store
-    };
-  } else if (process.env.SSL_STRICT === 'false') {
-    console.log('⚠️  Using LEGACY SSL (forced by SSL_STRICT=false)');
-    return {
-      rejectUnauthorized: false
-    };
-  } else {
-    // Auto-detect best SSL configuration
-    console.log('🔄 Auto-detecting best SSL configuration...');
-    return {
-      rejectUnauthorized: false, // Keep current working config for now
-      // TODO: Implement progressive SSL enhancement
-      _autoDetect: true
-    };
-  }
+  // Use strict SSL only in production. For all other environments (dev, testing),
+  // we can be more lenient to avoid local setup issues.
+  return {
+    rejectUnauthorized: isProduction
+  };
 }
 
 if (mysqlUrl) {
@@ -60,7 +33,7 @@ if (mysqlUrl) {
       user: url.username,
       password: url.password,
       database: url.pathname.slice(1), // Remove leading slash
-      ssl: getSecureSSLConfig(url.hostname),
+      ssl: getSecureSSLConfig(),
       // Pool-specific configurations (valid for createPool)
       waitForConnections: true,
       connectionLimit: 5,
@@ -114,7 +87,7 @@ if (mysqlUrl) {
     user: dbUser,
     password: dbPassword,
     database: dbName,
-    ssl: getSecureSSLConfig(dbHost),
+    ssl: getSecureSSLConfig(),
     // Pool-specific configurations (valid for createPool)
     waitForConnections: true,
     connectionLimit: 5,
