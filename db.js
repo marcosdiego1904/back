@@ -10,11 +10,20 @@ const mysqlUrl = process.env.MYSQL_URL || process.env.DATABASE_URL;
 
 // SSL Security Configuration
 function getSecureSSLConfig() {
+  // Allow overriding SSL strictness via environment variable for flexibility
+  if (process.env.SSL_STRICT === 'true') {
+    console.log('🔒 Using STRICT SSL (forced by SSL_STRICT=true)');
+    return { rejectUnauthorized: true };
+  }
+  if (process.env.SSL_STRICT === 'false') {
+    console.log('⚠️  Using LEGACY SSL (forced by SSL_STRICT=false)');
+    return { rejectUnauthorized: false };
+  }
+
+  // Default to production-based SSL settings
   const isProduction = process.env.NODE_ENV === 'production';
-  console.log(`🔒 Production mode for DB (using NODE_ENV): ${isProduction}`);
+  console.log(`🔒 SSL mode based on NODE_ENV: ${isProduction ? 'Strict' : 'Legacy'}`);
   
-  // Use strict SSL only in production. For all other environments (dev, testing),
-  // we can be more lenient to avoid local setup issues.
   return {
     rejectUnauthorized: isProduction
   };
