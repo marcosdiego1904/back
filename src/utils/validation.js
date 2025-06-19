@@ -116,9 +116,11 @@ function validatePassword(password) {
     errors.push('Password must contain at least one letter and one number');
   }
   
+  const isValid = errors.length === 0;
   return {
-    isValid: errors.length === 0,
-    errors
+    isValid,
+    errors,
+    sanitized: isValid ? password : null
   };
 }
 
