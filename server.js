@@ -83,7 +83,7 @@ const validateRegistration = createValidationMiddleware({
 
 const validateLogin = createValidationMiddleware({
   email: validateEmail,
-  password: (password) => ({ isValid: !!password, errors: password ? [] : ['Password is required'] })
+  password: validatePassword
 });
 
 const validateCategoryId = createValidationMiddleware({
