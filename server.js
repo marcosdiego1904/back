@@ -4,9 +4,9 @@ require('dotenv').config();
 const db = require('./db'); // Import the database connection
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { 
-  validateEmail, 
-  validateUsername, 
+const {
+  validateEmail,
+  validateUsername,
   validatePassword,
   validateId,
   validateVerseText,
@@ -15,6 +15,10 @@ const {
 } = require('./src/utils/validation');
 
 const app = express();
+
+// IMPORTANT: Webhook route BEFORE body parser (needs raw body)
+const stripeRoutes = require('./routes/stripe');
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
 // Middleware
 app.use(express.json()); // Parse JSON bodies
@@ -48,6 +52,9 @@ app.use(cors(corsOptions));
 
 // Handle preflight requests
 app.options('*', cors(corsOptions));
+
+// Register Stripe routes (AFTER body parser)
+app.use('/api/stripe', stripeRoutes);
 
 // Validate JWT_SECRET is present
 if (!process.env.JWT_SECRET) {
@@ -131,7 +138,7 @@ app.post('/api/auth/register', validateRegistration, async (req, res) => {
     const userId = result.insertId;
     // Generate JWT token
     const token = jwt.sign(
-      { userId, username },
+      { userId, username, email },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -177,7 +184,7 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
     await db.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user.id, username: user.username },
+      { userId: user.id, username: user.username, email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
