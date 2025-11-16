@@ -13,6 +13,7 @@ const {
   validateVerseReference,
   createValidationMiddleware
 } = require('./src/utils/validation');
+const { calculateUserRank } = require('./src/utils/rankingSystem');
 
 const app = express();
 
@@ -286,39 +287,106 @@ app.post('/api/user/memorized-verses', authenticate, validateMemorizedVerse, asy
   try {
     // Use sanitized data from validation middleware
     const { verseId, verseReference, verseText, contextText } = req.sanitized;
-    
+    const userId = req.user.userId;
+
     // Check if this verse is already saved by the user
     const [existingVerses] = await db.query(
       'SELECT * FROM user_memorized_verses WHERE user_id = ? AND verse_id = ?',
-      [req.user.userId, verseId]
+      [userId, verseId]
     );
-    
+
     if (existingVerses.length > 0) {
       // Update the existing record to update the timestamp
       await db.query(
         'UPDATE user_memorized_verses SET memorized_date = NOW() WHERE user_id = ? AND verse_id = ?',
-        [req.user.userId, verseId]
+        [userId, verseId]
       );
-      
-      return res.json({ 
+
+      // Get current progress without updating rank
+      const [users] = await db.query(
+        'SELECT verses_memorized, current_rank FROM users WHERE id = ?',
+        [userId]
+      );
+
+      const versesCount = users[0].verses_memorized || 0;
+      const rankInfo = calculateUserRank(versesCount);
+
+      return res.json({
+        success: true,
         message: 'Verse memorization updated successfully',
-        isNew: false
+        isNew: false,
+        progress: {
+          versesCount,
+          currentRank: rankInfo.currentRank,
+          progress: rankInfo.progress,
+          versesToNextRank: rankInfo.versesToNextRank,
+          leveledUp: false,
+          previousRank: users[0].current_rank
+        }
       });
     }
-    
+
+    // Get user's previous rank before adding new verse
+    const [previousUser] = await db.query(
+      'SELECT verses_memorized, current_rank FROM users WHERE id = ?',
+      [userId]
+    );
+
+    const previousVersesCount = previousUser[0].verses_memorized || 0;
+    const previousRankLevel = previousUser[0].current_rank;
+
     // Insert the new memorized verse
     await db.query(
       'INSERT INTO user_memorized_verses (user_id, verse_id, verse_reference, verse_text, context_text, memorized_date) VALUES (?, ?, ?, ?, ?, NOW())',
-      [req.user.userId, verseId, verseReference, verseText, contextText || '']
+      [userId, verseId, verseReference, verseText, contextText || '']
     );
-    
-    res.status(201).json({ 
-      message: 'Verse added to your memorized collection',
-      isNew: true
+
+    // Calculate new verse count
+    const newVersesCount = previousVersesCount + 1;
+
+    // Calculate new rank using the ranking system
+    const rankInfo = calculateUserRank(newVersesCount);
+    const newRankLevel = rankInfo.currentRank.level;
+
+    // Check if user leveled up
+    const leveledUp = previousRankLevel !== newRankLevel;
+
+    // Update user's verse count and rank in the database
+    await db.query(
+      'UPDATE users SET verses_memorized = ?, current_rank = ?, rank_updated_at = NOW() WHERE id = ?',
+      [newVersesCount, newRankLevel, userId]
+    );
+
+    // If user leveled up, record it in rank_history
+    if (leveledUp) {
+      await db.query(
+        'INSERT INTO rank_history (user_id, previous_rank, new_rank, verses_count) VALUES (?, ?, ?, ?)',
+        [userId, previousRankLevel, newRankLevel, newVersesCount]
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      message: leveledUp
+        ? `Congratulations! You've reached ${newRankLevel} rank!`
+        : 'Verse added to your memorized collection',
+      isNew: true,
+      progress: {
+        versesCount: newVersesCount,
+        currentRank: rankInfo.currentRank,
+        progress: rankInfo.progress,
+        versesToNextRank: rankInfo.versesToNextRank,
+        leveledUp,
+        previousRank: previousRankLevel
+      }
     });
+
   } catch (error) {
     console.error('Save memorized verse error:', error);
-    res.status(500).json({ message: 'Server error while saving memorized verse' });
+    res.status(500).json({
+      success: false,
+      message: 'Server error while saving memorized verse'
+    });
   }
 });
 
@@ -344,17 +412,161 @@ app.get('/api/verse/:verseId', validateVerseId, async (req, res) => {
     // Use validated and parsed ID from middleware
     const verseId = req.sanitized.verseId;
     const [rows] = await db.query('SELECT * FROM verses WHERE id = ?', [verseId]);
-    
+
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Verse not found' });
     }
-    
+
     res.json(rows[0]);
   } catch (error) {
     console.error('Database error:', error);
-    res.status(500).json({ 
-      error: 'Database error', 
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error' 
+    res.status(500).json({
+      error: 'Database error',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// =====================================================
+// RANKING & LEADERBOARD ENDPOINTS
+// =====================================================
+
+/**
+ * GET /api/ranking - Global Leaderboard
+ * Returns the global leaderboard of users ranked by verses memorized
+ * Includes current user's position even if not in top results
+ */
+app.get('/api/ranking', authenticate, async (req, res) => {
+  try {
+    const currentUserId = req.user.userId;
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
+
+    // Validate limit and offset
+    if (limit < 1 || limit > 500) {
+      return res.status(400).json({
+        success: false,
+        message: 'Limit must be between 1 and 500'
+      });
+    }
+
+    if (offset < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Offset must be non-negative'
+      });
+    }
+
+    // Get top users ordered by verses_memorized
+    // Using a subquery to calculate rank efficiently
+    const [leaderboard] = await db.query(`
+      SELECT
+        u.id as userId,
+        u.username,
+        u.verses_memorized as versesCount,
+        u.current_rank as rankLevel,
+        u.rank_updated_at as achievedAt,
+        (
+          SELECT COUNT(*) + 1
+          FROM users u2
+          WHERE u2.verses_memorized > u.verses_memorized
+        ) as rank
+      FROM users u
+      WHERE u.verses_memorized > 0
+      ORDER BY u.verses_memorized DESC, u.rank_updated_at ASC
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
+
+    // Get current user's position
+    const [currentUserResult] = await db.query(`
+      SELECT
+        u.id as userId,
+        u.username,
+        u.verses_memorized as versesCount,
+        u.current_rank as rankLevel,
+        u.rank_updated_at as achievedAt,
+        (
+          SELECT COUNT(*) + 1
+          FROM users u2
+          WHERE u2.verses_memorized > u.verses_memorized
+        ) as rank
+      FROM users u
+      WHERE u.id = ?
+    `, [currentUserId]);
+
+    // Get total users with memorized verses
+    const [totalCountResult] = await db.query(`
+      SELECT COUNT(*) as total
+      FROM users
+      WHERE verses_memorized > 0
+    `);
+
+    const currentUser = currentUserResult.length > 0
+      ? { ...currentUserResult[0], isCurrentUser: true }
+      : null;
+
+    res.json({
+      success: true,
+      leaderboard: leaderboard,
+      currentUser: currentUser,
+      totalUsers: totalCountResult[0].total
+    });
+
+  } catch (error) {
+    console.error('Leaderboard error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching leaderboard'
+    });
+  }
+});
+
+/**
+ * GET /api/user/progress - User's Rank Progress
+ * Returns the current user's rank information and progress towards next rank
+ */
+app.get('/api/user/progress', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Get user's current verse count
+    const [users] = await db.query(
+      'SELECT verses_memorized, current_rank FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const user = users[0];
+    const versesCount = user.verses_memorized || 0;
+
+    // Calculate rank information using the ranking system
+    const rankInfo = calculateUserRank(versesCount);
+
+    res.json({
+      success: true,
+      versesMemorized: versesCount,
+      currentRank: {
+        level: rankInfo.currentRank.level,
+        description: rankInfo.currentRank.description,
+        minVerses: rankInfo.currentRank.minVerses,
+        maxVerses: rankInfo.currentRank.maxVerses,
+        nextLevel: rankInfo.currentRank.nextLevel
+      },
+      progress: rankInfo.progress,
+      versesToNextRank: rankInfo.versesToNextRank
+    });
+
+  } catch (error) {
+    console.error('Progress error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching progress'
     });
   }
 });

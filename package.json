@@ -3,8 +3,13 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node scripts/run-migrations.js && node server.js",
+    "dev": "nodemon server.js",
+    "migrate": "node scripts/run-migrations.js",
+    "migrate:rollback": "knex migrate:rollback --env production",
+    "migrate:status": "knex migrate:status --env production",
+    "migrate:make": "knex migrate:make --env development",
+    "migrate:dev": "knex migrate:latest --env development"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +25,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
     "mysql2": "^3.12.0",
     "pg": "^8.13.3",
     "stripe": "^19.3.1"
