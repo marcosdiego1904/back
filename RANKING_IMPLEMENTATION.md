@@ -128,51 +128,57 @@ Enhanced to automatically update user rank when verses are memorized.
 
 ## 📋 What You Need to Do
 
-### Step 1: Apply Database Migration
+### ✨ ¡MIGRACIONES AUTOMÁTICAS! ✨
 
-You need to run the SQL migration to add the new database columns and tables.
+**¡Buenas noticias!** Ya no necesitas ejecutar SQL manualmente en Railway. El sistema ahora usa **migraciones automatizadas con Knex.js**.
 
-**Option A: Via Railway Dashboard (Recommended)**
-
-1. Go to your Railway project dashboard
-2. Click on your MySQL database service
-3. Click "Query" or "Console" tab
-4. Copy and paste the entire contents of `migrations/001_add_ranking_system.sql`
-5. Execute the SQL
-6. Verify success by checking the output
-
-**Option B: Via MySQL CLI**
+### Paso 1: Hacer Push (¡Eso es Todo!)
 
 ```bash
-mysql -u [username] -p [database_name] < migrations/001_add_ranking_system.sql
+git push
 ```
 
-**What this does:**
-- ✅ Adds ranking columns to existing users table
-- ✅ Creates rank_history table
-- ✅ Adds performance indexes
-- ✅ Initializes verse counts for existing users
-- ✅ Sets initial rank_updated_at timestamps
+**Eso es literalmente todo.** Railway ejecutará automáticamente las migraciones cuando hagas deploy.
+
+### ¿Qué Pasa Automáticamente?
+
+Cuando haces `git push`, Railway:
+
+1. ✅ Detecta los cambios
+2. ✅ Ejecuta `npm start`
+3. ✅ `npm start` corre automáticamente las migraciones pendientes
+4. ✅ Aplica los cambios a la base de datos:
+   - Agrega columnas de ranking a la tabla users
+   - Crea tabla rank_history
+   - Agrega índices de rendimiento
+   - Inicializa contadores para usuarios existentes
+5. ✅ Inicia el servidor
+
+### Verificar que Funcionó
+
+Revisa los logs de Railway después del deploy. Deberías ver:
+
+```
+🚀 Database Migration Runner
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Environment: production
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Completed migrations (1):
+   - 20251116_add_ranking_system.js
+
+✨ No pending migrations. Database is up to date!
+```
+
+### ¿Y si Algo Sale Mal?
+
+Si la migración falla, Railway **NO iniciará el servidor**. Esto previene que tu app corra con un esquema de base de datos incorrecto.
+
+Revisa los logs para ver el error específico.
 
 ---
 
-### Step 2: Deploy the Backend
-
-The code changes are ready to deploy. You have two options:
-
-**Option A: Manual Deployment**
-1. Commit the changes (see Step 3 below)
-2. Push to your repository
-3. Railway will auto-deploy if connected to your repo
-
-**Option B: Railway CLI**
-```bash
-railway up
-```
-
----
-
-### Step 3: Test the Endpoints
+### Paso 2: Probar los Endpoints
 
 After deployment, test the new endpoints:
 
@@ -296,14 +302,70 @@ ORDER BY MIN(verses_memorized);
 ## 📁 Files Changed/Created
 
 ### New Files
-- ✅ `migrations/001_add_ranking_system.sql` - Database migration
+- ✅ `migrations/001_add_ranking_system.sql` - SQL migration (referencia)
+- ✅ `migrations/knex/20251116_add_ranking_system.js` - Migración Knex (ACTIVA)
 - ✅ `src/utils/rankingSystem.js` - Ranking calculation logic
+- ✅ `knexfile.js` - Configuración de Knex para migraciones
+- ✅ `scripts/run-migrations.js` - Script que ejecuta migraciones automáticamente
 - ✅ `RANKING_IMPLEMENTATION.md` - This documentation
+- ✅ `MIGRATIONS_GUIDE.md` - Guía completa de migraciones automatizadas
 
 ### Modified Files
 - ✅ `server.js` - Added 3 endpoints, modified 1 endpoint, added import
+- ✅ `package.json` - Added migration scripts
 
-### Total Lines Added: ~450 lines
+### Total Lines Added: ~1200 lines
+
+---
+
+## 🎯 Sistema de Migraciones Automatizadas
+
+### ¿Qué Cambia?
+
+**Antes:** Ejecutabas SQL manualmente en Railway
+**Ahora:** Las migraciones se ejecutan automáticamente en cada deploy
+
+### Cómo Funciona
+
+```
+git push → Railway deploy → npm start → Ejecuta migraciones → Inicia servidor
+```
+
+### Scripts Disponibles
+
+```bash
+# Ejecutar migraciones (automático en Railway)
+npm run migrate
+
+# Ver estado de migraciones
+npm run migrate:status
+
+# Revertir última migración (¡cuidado!)
+npm run migrate:rollback
+
+# Crear nueva migración (para futuros cambios)
+npm run migrate:make nombre_de_la_migracion
+```
+
+### Para Futuras Migraciones
+
+Cuando necesites hacer cambios a la base de datos en el futuro:
+
+```bash
+# 1. Crea una nueva migración
+npm run migrate:make agregar_nueva_columna
+
+# 2. Edita el archivo generado en migrations/knex/
+
+# 3. Commit y push
+git add migrations/
+git commit -m "Add nueva columna"
+git push
+
+# 4. Railway ejecuta automáticamente la migración ✨
+```
+
+📚 **Lee `MIGRATIONS_GUIDE.md` para una guía completa con ejemplos.**
 
 ---
 
@@ -315,14 +377,27 @@ ORDER BY MIN(verses_memorized);
 - ✅ Implemented 2 new API endpoints (leaderboard, progress)
 - ✅ Enhanced memorized verses endpoint with rank updates
 - ✅ Added performance indexes for scalability
+- ✅ **Configured automatic migrations with Knex.js**
+- ✅ **Created migration automation system for Railway**
 - ✅ Included comprehensive documentation
 
 **What you need to do:**
-1. ✅ Run the database migration (5 minutes)
-2. ✅ Deploy the backend code (auto-deploy or manual push)
-3. ✅ Test the endpoints (10 minutes)
+1. ✅ `git push` (Eso es todo - las migraciones se ejecutan automáticamente)
+2. ✅ Verificar logs de Railway para confirmar migración exitosa
+3. ✅ Probar los endpoints (opcional)
 4. ✅ Frontend should automatically work with new endpoints
 
-**Estimated time to complete:** 20-30 minutes
+**Estimated time to complete:** 5 minutos (solo hacer push)
+
+### 🎉 Beneficios del Nuevo Sistema
+
+- ✅ **Cero trabajo manual** - No más copiar/pegar SQL
+- ✅ **Versionado en Git** - Historial completo de cambios de DB
+- ✅ **Reproducible** - Cualquier developer puede recrear la DB
+- ✅ **Seguro** - Si migración falla, el servidor no inicia
+- ✅ **Profesional** - Estándar de la industria
+- ✅ **Reversible** - Puedes hacer rollback si es necesario
 
 All the backend requirements from your specification have been fully implemented and are production-ready! 🎉
+
+**Plus:** Ahora tienes un sistema profesional de migraciones que te ahorrará tiempo en todos los proyectos futuros.
