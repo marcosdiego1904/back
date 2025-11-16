@@ -470,7 +470,7 @@ app.get('/api/ranking', authenticate, async (req, res) => {
           SELECT COUNT(*) + 1
           FROM users u2
           WHERE u2.verses_memorized > u.verses_memorized
-        ) as rank
+        ) as \`rank\`
       FROM users u
       WHERE u.verses_memorized > 0
       ORDER BY u.verses_memorized DESC, u.rank_updated_at ASC
@@ -489,7 +489,7 @@ app.get('/api/ranking', authenticate, async (req, res) => {
           SELECT COUNT(*) + 1
           FROM users u2
           WHERE u2.verses_memorized > u.verses_memorized
-        ) as rank
+        ) as \`rank\`
       FROM users u
       WHERE u.id = ?
     `, [currentUserId]);
