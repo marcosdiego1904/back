@@ -19,6 +19,7 @@ const app = express();
 
 // IMPORTANT: Webhook route BEFORE body parser (needs raw body)
 const stripeRoutes = require('./routes/stripe');
+const bibleRoutes = require('./routes/bible');
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
 // Middleware
@@ -56,6 +57,9 @@ app.options('*', cors(corsOptions));
 
 // Register Stripe routes (AFTER body parser)
 app.use('/api/stripe', stripeRoutes);
+
+// Register Bible API routes
+app.use('/api/bible', bibleRoutes);
 
 // Validate JWT_SECRET is present
 if (!process.env.JWT_SECRET) {
@@ -146,7 +150,7 @@ app.post('/api/auth/register', validateRegistration, async (req, res) => {
     res.status(201).json({
       message: 'User registered successfully',
       token,
-      user: { id: userId, username, email }
+      user: { id: userId, username, email, isPremium: false }
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -160,7 +164,7 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
     // Use sanitized data from validation middleware
     const { email, password } = req.sanitized;
     // Find user by email
-    const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+    const [users] = await db.query('SELECT id, username, email, password_hash, is_premium FROM users WHERE email = ?', [email]);
     
     if (users.length === 0) {
       return res.status(401).json({ message: 'Invalid credentials' });
@@ -192,7 +196,7 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
     res.json({
       message: 'Login successful',
       token,
-      user: { id: user.id, username: user.username, email: user.email }
+      user: { id: user.id, username: user.username, email: user.email, isPremium: Boolean(user.is_premium) }
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -254,13 +258,23 @@ app.get('/api/verses/:subcategoryId', validateSubcategoryId, async (req, res) =>
 // Protected route example
 app.get('/api/user/profile', authenticate, async (req, res) => {
   try {
-    const [users] = await db.query('SELECT id, username, email, created_at, last_login FROM users WHERE id = ?', [req.user.userId]);
-    
+    const [users] = await db.query('SELECT id, username, email, is_premium, created_at, last_login FROM users WHERE id = ?', [req.user.userId]);
+
     if (users.length === 0) {
       return res.status(404).json({ message: 'User not found' });
     }
-    
-    res.json({ user: users[0] });
+
+    const user = users[0];
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        isPremium: Boolean(user.is_premium),
+        created_at: user.created_at,
+        last_login: user.last_login
+      }
+    });
   } catch (error) {
     console.error('Profile error:', error);
     res.status(500).json({ message: 'Server error' });

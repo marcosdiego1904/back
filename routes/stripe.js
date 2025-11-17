@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const jwt = require('jsonwebtoken');
+const db = require('../db'); // Import database connection
 
 // Authentication middleware (inline version based on server.js authenticate)
 const authenticateToken = (req, res, next) => {
@@ -237,33 +238,96 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   // Handle the event
   switch (event.type) {
     case 'customer.subscription.created':
-      const subscriptionCreated = event.data.object;
-      console.log('Subscription created:', subscriptionCreated.id);
-      // TODO: Update your database here if needed
-      break;
-
     case 'customer.subscription.updated':
-      const subscriptionUpdated = event.data.object;
-      console.log('Subscription updated:', subscriptionUpdated.id);
-      // TODO: Update your database here if needed
+      const subscription = event.data.object;
+      console.log('Subscription created/updated:', subscription.id);
+
+      // Activate premium if subscription is active or trialing
+      if (subscription.status === 'active' || subscription.status === 'trialing') {
+        try {
+          const customer = await stripe.customers.retrieve(subscription.customer);
+          const userId = customer.metadata.userId;
+
+          if (userId) {
+            await db.query(
+              'UPDATE users SET is_premium = 1 WHERE id = ?',
+              [userId]
+            );
+            console.log(`✅ Premium activated for user ${userId}`);
+          } else {
+            console.error('No userId found in customer metadata');
+          }
+        } catch (error) {
+          console.error('Error activating premium:', error);
+        }
+      }
       break;
 
     case 'customer.subscription.deleted':
       const subscriptionDeleted = event.data.object;
       console.log('Subscription deleted:', subscriptionDeleted.id);
-      // TODO: Update your database here if needed
+
+      // Deactivate premium
+      try {
+        const customer = await stripe.customers.retrieve(subscriptionDeleted.customer);
+        const userId = customer.metadata.userId;
+
+        if (userId) {
+          await db.query(
+            'UPDATE users SET is_premium = 0 WHERE id = ?',
+            [userId]
+          );
+          console.log(`❌ Premium deactivated for user ${userId}`);
+        } else {
+          console.error('No userId found in customer metadata');
+        }
+      } catch (error) {
+        console.error('Error deactivating premium:', error);
+      }
       break;
 
     case 'invoice.paid':
       const invoicePaid = event.data.object;
       console.log('Invoice paid:', invoicePaid.id);
-      // TODO: Grant/extend access in your database
+
+      // Ensure premium is active when invoice is paid
+      if (invoicePaid.subscription) {
+        try {
+          const customer = await stripe.customers.retrieve(invoicePaid.customer);
+          const userId = customer.metadata.userId;
+
+          if (userId) {
+            await db.query(
+              'UPDATE users SET is_premium = 1 WHERE id = ?',
+              [userId]
+            );
+            console.log(`✅ Premium confirmed for user ${userId} (invoice paid)`);
+          }
+        } catch (error) {
+          console.error('Error confirming premium on invoice payment:', error);
+        }
+      }
       break;
 
     case 'invoice.payment_failed':
       const invoiceFailed = event.data.object;
       console.log('Invoice payment failed:', invoiceFailed.id);
-      // TODO: Send notification to user about failed payment
+
+      // Optionally deactivate premium on payment failure
+      try {
+        const customer = await stripe.customers.retrieve(invoiceFailed.customer);
+        const userId = customer.metadata.userId;
+
+        if (userId) {
+          await db.query(
+            'UPDATE users SET is_premium = 0 WHERE id = ?',
+            [userId]
+          );
+          console.log(`⚠️ Premium deactivated for user ${userId} (payment failed)`);
+        }
+      } catch (error) {
+        console.error('Error handling failed payment:', error);
+      }
       break;
 
     default:
