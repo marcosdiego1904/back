@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 const db = require('./db'); // Import the database connection
 const bcrypt = require('bcrypt');
@@ -16,6 +18,39 @@ const {
 const { calculateUserRank } = require('./src/utils/rankingSystem');
 
 const app = express();
+
+// Security: Add helmet for security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Required for some frontend frameworks
+}));
+
+// Security: Rate limiting configuration
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per window
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 login/register attempts per window
+  message: { error: 'Too many authentication attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply general rate limiting to all API routes
+app.use('/api/', generalLimiter);
 
 // IMPORTANT: Webhook route BEFORE body parser (needs raw body)
 const stripeRoutes = require('./routes/stripe');
@@ -118,8 +153,8 @@ const validateMemorizedVerse = createValidationMiddleware({
 });
 
 // Auth routes
-// Register a new user
-app.post('/api/auth/register', validateRegistration, async (req, res) => {
+// Register a new user (with strict rate limiting)
+app.post('/api/auth/register', authLimiter, validateRegistration, async (req, res) => {
   try {
     // Use sanitized data from validation middleware
     const { username, email, password } = req.sanitized;
@@ -141,11 +176,11 @@ app.post('/api/auth/register', validateRegistration, async (req, res) => {
     );
     // Get the user ID from the insert result
     const userId = result.insertId;
-    // Generate JWT token
+    // Generate JWT token (short expiry for security - implement refresh tokens for better UX)
     const token = jwt.sign(
       { userId, username, email },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '24h' }
     );
     res.status(201).json({
       message: 'User registered successfully',
@@ -158,8 +193,8 @@ app.post('/api/auth/register', validateRegistration, async (req, res) => {
   }
 });
 
-// Login
-app.post('/api/auth/login', validateLogin, async (req, res) => {
+// Login (with strict rate limiting to prevent brute force)
+app.post('/api/auth/login', authLimiter, validateLogin, async (req, res) => {
   try {
     // Use sanitized data from validation middleware
     const { email, password } = req.sanitized;
@@ -187,11 +222,11 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
     }
     // Update last login
     await db.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
-    // Generate JWT token
+    // Generate JWT token (short expiry for security - implement refresh tokens for better UX)
     const token = jwt.sign(
       { userId: user.id, username: user.username, email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '24h' }
     );
     res.json({
       message: 'Login successful',

@@ -20,7 +20,8 @@ if (process.env.DATABASE_URL) {
       password: url.password,
       database: url.pathname.slice(1), // Remove leading slash
       ssl: {
-        rejectUnauthorized: false
+        // SECURITY: Enable certificate validation in production
+        rejectUnauthorized: process.env.NODE_ENV === 'production'
       },
       waitForConnections: true,
       connectionLimit: 3,
@@ -68,7 +69,8 @@ if (process.env.DATABASE_URL) {
     password: dbPassword,
     database: dbName,
     ssl: {
-      rejectUnauthorized: false
+      // SECURITY: Enable certificate validation in production
+      rejectUnauthorized: process.env.NODE_ENV === 'production'
     },
     waitForConnections: true,
     connectionLimit: 3,
