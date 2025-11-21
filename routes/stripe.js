@@ -30,12 +30,22 @@ router.get('/config', (req, res) => {
 // PROTECTED ENDPOINT: Create a checkout session for subscription
 router.post('/create-checkout-session', authenticateToken, async (req, res) => {
   try {
-    const { priceId, userId, userEmail, successUrl, cancelUrl } = req.body;
+    const { priceId, successUrl, cancelUrl } = req.body;
+
+    // SECURITY: Use authenticated user data from JWT token, not request body
+    const userId = req.user.userId;
+    const userEmail = req.user.email;
 
     // Validate required fields
-    if (!priceId || !userId || !userEmail) {
+    if (!priceId) {
       return res.status(400).json({
-        error: 'Missing required fields: priceId, userId, userEmail'
+        error: 'Missing required field: priceId'
+      });
+    }
+
+    if (!userId || !userEmail) {
+      return res.status(401).json({
+        error: 'Invalid authentication token'
       });
     }
 
@@ -138,22 +148,32 @@ router.get('/subscription-status', authenticateToken, async (req, res) => {
 router.post('/cancel-subscription', authenticateToken, async (req, res) => {
   try {
     const { subscriptionId } = req.body;
+    const userEmail = req.user.email;
 
     if (!subscriptionId) {
       return res.status(400).json({ error: 'Missing subscriptionId' });
     }
 
+    // SECURITY: Verify the subscription belongs to the authenticated user
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    const customer = await stripe.customers.retrieve(subscription.customer);
+
+    if (customer.email !== userEmail) {
+      console.error(`SECURITY: User ${userEmail} attempted to cancel subscription belonging to ${customer.email}`);
+      return res.status(403).json({ error: 'Not authorized to modify this subscription' });
+    }
+
     // Cancel at period end (so user can use it until billing cycle ends)
-    const subscription = await stripe.subscriptions.update(subscriptionId, {
+    const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
       cancel_at_period_end: true
     });
 
     res.json({
       success: true,
       subscription: {
-        id: subscription.id,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000)
+        id: updatedSubscription.id,
+        cancelAtPeriodEnd: updatedSubscription.cancel_at_period_end,
+        currentPeriodEnd: new Date(updatedSubscription.current_period_end * 1000)
       }
     });
   } catch (error) {
@@ -166,20 +186,30 @@ router.post('/cancel-subscription', authenticateToken, async (req, res) => {
 router.post('/resume-subscription', authenticateToken, async (req, res) => {
   try {
     const { subscriptionId } = req.body;
+    const userEmail = req.user.email;
 
     if (!subscriptionId) {
       return res.status(400).json({ error: 'Missing subscriptionId' });
     }
 
-    const subscription = await stripe.subscriptions.update(subscriptionId, {
+    // SECURITY: Verify the subscription belongs to the authenticated user
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    const customer = await stripe.customers.retrieve(subscription.customer);
+
+    if (customer.email !== userEmail) {
+      console.error(`SECURITY: User ${userEmail} attempted to resume subscription belonging to ${customer.email}`);
+      return res.status(403).json({ error: 'Not authorized to modify this subscription' });
+    }
+
+    const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
       cancel_at_period_end: false
     });
 
     res.json({
       success: true,
       subscription: {
-        id: subscription.id,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end
+        id: updatedSubscription.id,
+        cancelAtPeriodEnd: updatedSubscription.cancel_at_period_end
       }
     });
   } catch (error) {
