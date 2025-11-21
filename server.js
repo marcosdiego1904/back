@@ -1,5 +1,8 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const Sentry = require('@sentry/node');
 require('dotenv').config();
 const db = require('./db'); // Import the database connection
 const bcrypt = require('bcrypt');
@@ -15,7 +18,80 @@ const {
 } = require('./src/utils/validation');
 const { calculateUserRank } = require('./src/utils/rankingSystem');
 
+// =====================================================
+// SENTRY ERROR MONITORING
+// =====================================================
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'production',
+    tracesSampleRate: 0.1, // 10% of transactions for performance monitoring
+    beforeSend(event) {
+      // Don't send events in development unless explicitly enabled
+      if (process.env.NODE_ENV === 'development' && !process.env.SENTRY_DEV) {
+        return null;
+      }
+      return event;
+    },
+  });
+  console.log('✅ Sentry error monitoring initialized');
+} else {
+  console.log('⚠️  Sentry DSN not configured - error monitoring disabled');
+}
+
 const app = express();
+
+// =====================================================
+// SECURITY HEADERS (Helmet)
+// =====================================================
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for API (no HTML served)
+  crossOriginEmbedderPolicy: false,
+}));
+
+// =====================================================
+// RATE LIMITING
+// =====================================================
+
+// General API rate limit: 100 requests per 15 minutes per IP
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Strict rate limit for auth endpoints: 5 attempts per 15 minutes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: {
+    success: false,
+    message: 'Too many login attempts, please try again in 15 minutes.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful logins
+});
+
+// Registration limiter: 3 accounts per hour per IP
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  message: {
+    success: false,
+    message: 'Too many accounts created, please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply general rate limit to all API routes
+app.use('/api/', generalLimiter);
 
 // IMPORTANT: Webhook route BEFORE body parser (needs raw body)
 const stripeRoutes = require('./routes/stripe');
@@ -118,8 +194,8 @@ const validateMemorizedVerse = createValidationMiddleware({
 });
 
 // Auth routes
-// Register a new user
-app.post('/api/auth/register', validateRegistration, async (req, res) => {
+// Register a new user (with strict rate limiting)
+app.post('/api/auth/register', registerLimiter, validateRegistration, async (req, res) => {
   try {
     // Use sanitized data from validation middleware
     const { username, email, password } = req.sanitized;
@@ -158,8 +234,8 @@ app.post('/api/auth/register', validateRegistration, async (req, res) => {
   }
 });
 
-// Login
-app.post('/api/auth/login', validateLogin, async (req, res) => {
+// Login (with strict rate limiting to prevent brute force)
+app.post('/api/auth/login', authLimiter, validateLogin, async (req, res) => {
   try {
     // Use sanitized data from validation middleware
     const { email, password } = req.sanitized;
@@ -204,9 +280,26 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
   }
 });
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
+// Health check endpoint (with database connectivity check)
+app.get('/api/health', async (req, res) => {
+  try {
+    // Verify database connectivity
+    await db.query('SELECT 1');
+    res.json({
+      status: 'ok',
+      message: 'Server is running',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(process.uptime()) + 's'
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      message: 'Server is running but database is unavailable',
+      database: 'disconnected',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Categories endpoint
@@ -281,21 +374,98 @@ app.get('/api/user/profile', authenticate, async (req, res) => {
   }
 });
 
-// Error handler middleware
+// Error handler middleware (with Sentry reporting)
 app.use((err, req, res, next) => {
+  // Log the error
   console.error(err.stack);
-  res.status(500).json({ 
-    error: 'Server error', 
+
+  // Report to Sentry if configured
+  if (process.env.SENTRY_DSN) {
+    Sentry.captureException(err, {
+      extra: {
+        url: req.url,
+        method: req.method,
+        userId: req.user?.userId,
+      },
+    });
+  }
+
+  res.status(500).json({
+    error: 'Server error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
   });
 });
 
 // Start the server
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📱 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🔗 Categories: http://localhost:${PORT}/api/categories`);
+  console.log(`🛡️  Security: Helmet, Rate Limiting, Sentry enabled`);
+});
+
+// Set server timeout (30 seconds)
+server.setTimeout(30000);
+
+// =====================================================
+// GRACEFUL SHUTDOWN
+// =====================================================
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n⚠️  ${signal} received. Starting graceful shutdown...`);
+
+  // Stop accepting new connections
+  server.close(async () => {
+    console.log('✅ HTTP server closed');
+
+    try {
+      // Close database connections
+      await db.end();
+      console.log('✅ Database connections closed');
+    } catch (err) {
+      console.error('❌ Error closing database:', err.message);
+    }
+
+    // Flush Sentry events before exit
+    if (process.env.SENTRY_DSN) {
+      await Sentry.close(2000);
+      console.log('✅ Sentry flushed');
+    }
+
+    console.log('👋 Graceful shutdown complete');
+    process.exit(0);
+  });
+
+  // Force exit after 10 seconds if graceful shutdown fails
+  setTimeout(() => {
+    console.error('❌ Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+}
+
+// Handle shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught errors (last resort)
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+  if (process.env.SENTRY_DSN) {
+    Sentry.captureException(err);
+  }
+  gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  if (process.env.SENTRY_DSN) {
+    Sentry.captureException(reason);
+  }
 });
 app.post('/api/user/memorized-verses', authenticate, validateMemorizedVerse, async (req, res) => {
   try {
